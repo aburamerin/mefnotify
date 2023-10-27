@@ -6,6 +6,8 @@ require (
 	github.com/PuerkitoBio/goquery v1.8.1
 	github.com/gen2brain/beeep v0.0.0-20230907135156-1a38885a97fc
 	github.com/getlantern/systray v1.2.2
+	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
+	github.com/mattn/go-sqlite3 v1.14.17
 )
 
 require (
