@@ -12,7 +12,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/jackc/pgx/v5/stdlib"
+
 	"mefnotify/pkg/posts"
 	"mefnotify/pkg/telegram"
 
@@ -21,7 +22,7 @@ import (
 	"github.com/getlantern/systray"
 )
 
-const PREVIEW_LEN = 32
+const PrviewLen = 64
 
 func TruncateString(str string, length int) string {
 	if length <= 0 {
@@ -94,8 +95,8 @@ func DofaminScrape(db *sql.DB) (sliceOfPosts posts.PostsSlice) {
 		}
 
 		p.Author = strings.TrimSpace(info.Find("div.post__author-wrapper").Find("a.post__author").Text())
-		p.Content = s.Find("div.post__content").Find("div.post__text").Text()
-		p.Preview = TruncateString(p.Content, PREVIEW_LEN)
+		p.Content = s.Find("div.post__content").Find("div.post__text").First().Text()
+		p.Preview = TruncateString(p.Content, PrviewLen)
 
 		fmt.Printf("%+v\n", p)
 
@@ -140,11 +141,16 @@ func onReady() {
 	systray.SetIcon(getIcon("assets/nf.ico"))
 
 	chatID, _ := strconv.Atoi(os.Getenv("MEF_CHATID"))
-
 	token := os.Getenv("MEF_TGTOKEN")
 	client := telegram.New(token, int64(chatID))
-	db, _ := posts.NewDB("./posts.db")
 
+	DSN := os.Getenv("MEF_DSN")
+	db, err := posts.NewDB(DSN)
+	if err != nil {
+		log.Fatalf("FATAL: Can't connect to db: %s", err)
+	}
+
+	// scrape in endless loop
 	go func() {
 		for {
 			allPosts := DofaminScrape(db)

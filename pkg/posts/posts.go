@@ -26,12 +26,11 @@ func (p *Post) String() string {
 	return fmt.Sprintf("*%s:* %s", p.Author, p.Preview)
 }
 
-// NewDB создает Posts для хранения постов в базе данных SQLite.
-func NewDB(dbFile string) (*sql.DB, error) {
-	sqlDB, err := sql.Open("sqlite3", dbFile)
-	println("sqldb:", sqlDB)
-
+// NewDB создает Posts для хранения постов в базе данных postgres.
+func NewDB(DSN string) (*sql.DB, error) {
+	sqlDB, err := sql.Open("pgx", DSN)
 	if err != nil {
+		log.Printf("Unable to connect to database: %v\n", err)
 		return nil, err
 	}
 
@@ -39,10 +38,10 @@ func NewDB(dbFile string) (*sql.DB, error) {
   CREATE TABLE IF NOT EXISTS posts (
       id INT NOT NULL PRIMARY KEY,
       time TIMESTAMP,
-      preview VARCHAR(256),
+      preview varchar(256),
       content TEXT,
-      url TEXT,
-      author VARCHAR(256)
+      url varchar(256),
+      author varchar(256)
   );
   `
 
@@ -55,14 +54,22 @@ func NewDB(dbFile string) (*sql.DB, error) {
 
 func StorePost(db *sql.DB, post Post) {
 	sqlAddPost := `
-	INSERT OR REPLACE INTO posts (
+	INSERT INTO posts (
 		id,
     time,
     preview,
     content,
     url,
     author
-	) values(?, ?, ?, ?, ?, ?)
+	) values
+  (
+    $1::int,
+    $2::timestamp,
+    $3::varchar,
+    $4::text,
+    $5::varchar,
+    $6::varchar
+  )
 	`
 
 	stmt, err := db.Prepare(sqlAddPost)
@@ -85,7 +92,7 @@ func StorePost(db *sql.DB, post Post) {
 }
 
 func FindPost(db *sql.DB, ID int64) bool {
-	sqlFindPost := `SELECT author FROM posts WHERE id = ?`
+	sqlFindPost := `SELECT author FROM posts WHERE id = $1::int`
 
 	log.Printf("searching %d", ID)
 	var Author string
@@ -93,9 +100,7 @@ func FindPost(db *sql.DB, ID int64) bool {
 
 	stmt, err := db.Prepare(sqlFindPost)
 	if err != nil {
-		log.Println("start error")
 		log.Println(err)
-		log.Println("eof error")
 		return false
 	}
 	defer stmt.Close()
