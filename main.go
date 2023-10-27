@@ -6,9 +6,11 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 	"unicode/utf8"
 
@@ -18,11 +20,13 @@ import (
 	"mefnotify/pkg/telegram"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/gen2brain/beeep"
-	"github.com/getlantern/systray"
 )
 
-const PrviewLen = 64
+const (
+	PreviewLen     = 64
+	ScrapeInterval = 60
+	URL            = "https://dofamin.org/index.php?v=Diary"
+)
 
 func TruncateString(str string, length int) string {
 	if length <= 0 {
@@ -35,15 +39,6 @@ func TruncateString(str string, length int) string {
 
 	return string([]rune(str)[:length]) + "..."
 }
-
-func init() {
-	beeep.DefaultDuration = 5000 // 5sec
-}
-
-const (
-	URL            = "https://dofamin.org/index.php?v=Diary"
-	ScrapeInterval = 30
-)
 
 func getIcon(s string) []byte {
 	b, err := os.ReadFile(s)
@@ -96,14 +91,11 @@ func DofaminScrape(db *sql.DB) (sliceOfPosts posts.PostsSlice) {
 
 		p.Author = strings.TrimSpace(info.Find("div.post__author-wrapper").Find("a.post__author").Text())
 		p.Content = s.Find("div.post__content").Find("div.post__text").First().Text()
-		p.Preview = TruncateString(p.Content, PrviewLen)
+		p.Preview = TruncateString(p.Content, PreviewLen)
 
-		fmt.Printf("%+v\n", p)
-
-		if posts.FindPost(db, p.ID) {
-			log.Printf("Post found, skipping.")
-		} else {
-			log.Printf("Post not found, sending.")
+		// search in database
+		if !posts.FindPost(db, p.ID) {
+			log.Printf("Post %d not found, add to slice for sending.", p.ID)
 			sliceOfPosts = append(sliceOfPosts, p)
 		}
 
@@ -114,8 +106,8 @@ func DofaminScrape(db *sql.DB) (sliceOfPosts posts.PostsSlice) {
 }
 
 func SendToChat(db *sql.DB, client *telegram.Client, sliceOfPosts posts.PostsSlice) {
+	// if no new post - skipping
 	if len(sliceOfPosts) == 0 {
-		log.Printf("No new posts.")
 		return
 	}
 
@@ -124,25 +116,32 @@ func SendToChat(db *sql.DB, client *telegram.Client, sliceOfPosts posts.PostsSli
 		return sliceOfPosts[i].Info.PostDate.Before(sliceOfPosts[j].Info.PostDate)
 	})
 
-	// send here
+	// send here and save to db
 	for _, p := range sliceOfPosts {
 		err := client.SendMessage(p)
 		if err == nil {
-			posts.StorePost(db, p)
+			err := posts.StorePost(db, p)
+			if err != nil {
+				// Fail if something wrong with database
+				log.Fatalf("ERROR storing post %s: %s", p.String(), err)
+			}
+		} else {
+			log.Printf("ERROR sending %d message %s: %s", p.ID, p.Preview, err)
 		}
 	}
 }
 
-func onExit() {
-	log.Println("Bye.")
-}
+func main() {
+	chatID, err := strconv.Atoi(os.Getenv("MEF_CHATID"))
+	if err != nil {
+		log.Fatalf("FATAL: wrong telegram chat_id value: %s", err)
+	}
 
-func onReady() {
-	systray.SetIcon(getIcon("assets/nf.ico"))
-
-	chatID, _ := strconv.Atoi(os.Getenv("MEF_CHATID"))
 	token := os.Getenv("MEF_TGTOKEN")
-	client := telegram.New(token, int64(chatID))
+	client, err := telegram.New(token, int64(chatID))
+	if err != nil {
+		log.Fatalf("FATAL: can'c connect telegram bot: %s", err)
+	}
 
 	DSN := os.Getenv("MEF_DSN")
 	db, err := posts.NewDB(DSN)
@@ -158,8 +157,10 @@ func onReady() {
 			time.Sleep(ScrapeInterval * time.Second)
 		}
 	}()
-}
 
-func main() {
-	systray.Run(onReady, onExit)
+	quitChannel := make(chan os.Signal, 1)
+	signal.Notify(quitChannel, syscall.SIGINT, syscall.SIGTERM)
+	<-quitChannel
+	// time for cleanup before exit
+	log.Println("Bye!")
 }

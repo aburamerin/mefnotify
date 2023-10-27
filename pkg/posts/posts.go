@@ -23,7 +23,7 @@ type Post struct {
 type PostsSlice []Post
 
 func (p *Post) String() string {
-	return fmt.Sprintf("*%s:* %s", p.Author, p.Preview)
+	return fmt.Sprintf("%d: %s: %s", p.ID, p.Author, p.Preview)
 }
 
 // NewDB создает Posts для хранения постов в базе данных postgres.
@@ -52,7 +52,7 @@ func NewDB(DSN string) (*sql.DB, error) {
 	return sqlDB, nil
 }
 
-func StorePost(db *sql.DB, post Post) {
+func StorePost(db *sql.DB, post Post) error {
 	sqlAddPost := `
 	INSERT INTO posts (
 		id,
@@ -74,7 +74,7 @@ func StorePost(db *sql.DB, post Post) {
 
 	stmt, err := db.Prepare(sqlAddPost)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	defer stmt.Close()
 
@@ -87,16 +87,16 @@ func StorePost(db *sql.DB, post Post) {
 		post.Author,
 	)
 	if err != nil {
-		panic(err)
+		return err
 	}
+
+	return nil
 }
 
 func FindPost(db *sql.DB, ID int64) bool {
 	sqlFindPost := `SELECT author FROM posts WHERE id = $1::int`
 
-	log.Printf("searching %d", ID)
 	var Author string
-	log.Println(db)
 
 	stmt, err := db.Prepare(sqlFindPost)
 	if err != nil {

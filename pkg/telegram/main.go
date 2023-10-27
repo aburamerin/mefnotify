@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"fmt"
 	"log"
 
 	"mefnotify/pkg/posts"
@@ -13,16 +14,16 @@ type Client struct {
 	chatID int64
 }
 
-func New(apiKey string, chatID int64) *Client {
+func New(apiKey string, chatID int64) (*Client, error) {
 	bot, err := tgbotapi.NewBotAPI(apiKey)
 	if err != nil {
-		log.Panic(err)
+		return nil, err
 	}
 
 	return &Client{
 		bot:    bot,
 		chatID: chatID,
-	}
+	}, nil
 }
 
 func (c *Client) SendMessage(p posts.Post) error {
@@ -31,8 +32,13 @@ func (c *Client) SendMessage(p posts.Post) error {
 			tgbotapi.NewInlineKeyboardButtonURL("Читать на сайте", p.Info.URL),
 		),
 	)
-	msg := tgbotapi.NewMessage(c.chatID, p.String())
-	msg.ParseMode = "Markdown"
+
+	author := tgbotapi.EscapeText(tgbotapi.ModeHTML, p.Author)
+	preview := tgbotapi.EscapeText(tgbotapi.ModeHTML, p.Preview)
+	msgText := fmt.Sprintf("<b>%s:</b> %s", author, preview)
+
+	msg := tgbotapi.NewMessage(c.chatID, msgText)
+	msg.ParseMode = "HTML"
 	msg.ReplyMarkup = buttonURL
 	_, err := c.bot.Send(msg)
 	return err
