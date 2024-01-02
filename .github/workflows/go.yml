@@ -28,6 +28,7 @@ jobs:
       run: go test -v ./...
 
   goreleaser:
+    permissions: write-all
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
